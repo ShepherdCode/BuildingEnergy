@@ -1,9 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# ## Electricty Usage in Site Eagle
-# Try forecast electricy usage in one building in site Eagle
-# 
+# ## PCA weather
 
 # In[1]:
 
@@ -23,12 +21,11 @@ except:
 
 ZIP_FILE='BuildingData.zip'
 ZIP_PATH = DATAPATH+ZIP_FILE
-ELECT_FILE='electricity.csv'
 WEATHER_FILE='weather.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[2]:
+# In[ ]:
 
 
 from os import listdir
@@ -36,20 +33,15 @@ import csv
 from zipfile import ZipFile
 import numpy as np
 import pandas as pd
-from pandas.plotting import autocorrelation_plot
-from scipy import stats  # mode
-
+from sklearn.decomposition import PCA, KernelPCA
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
-
 import matplotlib.pyplot as plt
 from matplotlib import colors
 mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[3]:
+# In[ ]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -76,77 +68,57 @@ def get_site_timeseries(panda,site):
     return panda
 
 
-# In[4]:
+# In[ ]:
 
 
-SITE = 'Eagle'
-METER = 'Electricty'
-BLDG = 'Eagle_education_Peter'
 wet_df = read_zip_to_panda(ZIP_PATH,WEATHER_FILE)
 wet_df = fix_date_type(wet_df)
-elec_df = read_zip_to_panda(ZIP_PATH,ELECT_FILE)
-elec_df = fix_date_type(elec_df)
-site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
-bldg_specific_elect = elec_df[[BLDG]]
-#print(site_specific_weather.info())
-#print(bldg_specific_electricity.info())  
 
 
-# In[5]:
+# In[ ]:
 
 
-one_bldg_df = pd.concat([bldg_specific_elect,site_specific_weather],axis=1)
-one_bldg_df = one_bldg_df.drop(['site_id'],axis=1)
-one_bldg_df = one_bldg_df.rename(columns={BLDG : METER})
-
-print("Note 17544 rows = two years hourly, including one leap day.")
-print("Note every column contains some NaN:")
-one_bldg_df.info()
+wet_df = wet_df.loc[:,'airTemperature': 'windSpeed'] #Create a new dataframe not including timestamp and site id
 
 
-# In[6]:
+# In[ ]:
 
 
-one_bldg_df.corr()
+#Fit and transform in standard scaler 
+scaler = StandardScaler ()
+scaler.fit(wet_df)
+wet_df_transform = scaler.transform (wet_df) #Apply transform 
 
 
-# In[7]:
+# In[ ]:
 
 
-plt.matshow(one_bldg_df.corr())
+#Input contains NaN, infinity or a value too large for dtype('float64').
+pca_wet_df = pd.DataFrame(wet_df_transform) #create dataframe
+np.where(pca_wet_df .values >= np.finfo(np.float64).max) 
+pca_wet_df.replace([np.inf, -np.inf], np.nan, inplace=True)
+pca_wet_df.fillna(0, inplace=True)
+pca_wet_df = pca_wet_df.to_numpy() #convert Dataframe back to array
+
+pca = PCA (0.98) #shows 98% of the data in PCA
+pca.fit (pca_wet_df)
+pca_wet_df = pca.transform (pca_wet_df)
+
+per_var = np.round(pca.explained_variance_ratio_*100,decimals = 1)
+labels = ['PC'+str(x) for x in range (1,len(per_var)+1)]
+
+plt.figure(figsize=(10,7))
+plt.bar(x=range(1,len(per_var)+1), height = per_var, tick_label =labels)
+plt.ylabel('Percentage of Variance',fontsize = 20)
+plt.xlabel('Principal component',fontsize = 20)
+plt.title('PCA Weather',fontsize = 25)
 plt.show()
 
 
-# In[8]:
+# In[ ]:
 
 
-# Linear Regression
-X = one_bldg_df.drop(METER,axis=1).fillna(0)
-y = one_bldg_df[METER].fillna(0)
-split = 900
-X_train = X.iloc[0:split]
-y_train = y.iloc[0:split]
-linreg = LinearRegression()
-linreg.fit(X_train,y_train)
 
-
-# In[9]:
-
-
-# Cross validation.
-# For now, just test an arbitrary group.
-X_test = X.iloc[split:]
-y_test = y.iloc[split:]
-y_pred = linreg.predict(X_test)
-rmse = mean_squared_error(y_test,y_pred,squared=False)
-print("RMSE = std dev of unexplained variation:",rmse)
-
-
-# In[10]:
-
-
-print("std dev of the response variable:",y_test.std())
-y_test.describe()
 
 
 # In[ ]:

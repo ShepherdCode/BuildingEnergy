@@ -8,7 +8,7 @@
 # Where LinReg viewed each vector as one point,
 # LSTM will view each vector as a time series.
 
-# In[1]:
+# In[9]:
 
 
 DATAPATH=''
@@ -31,7 +31,7 @@ WEATHER_FILE='weather.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[2]:
+# In[10]:
 
 
 from os import listdir
@@ -46,6 +46,7 @@ from sklearn.metrics import mean_squared_error
 
 from keras.models import Sequential
 from keras.layers import SimpleRNN
+from keras.layers import LSTM
 from keras.layers import TimeDistributed
 from keras.layers import Dense
 from keras.losses import MeanSquaredError
@@ -56,7 +57,7 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[3]:
+# In[11]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -83,7 +84,7 @@ def get_site_timeseries(panda,site):
     return panda
 
 
-# In[4]:
+# In[12]:
 
 
 SITE = 'Eagle'
@@ -93,7 +94,7 @@ PREDICTOR_VARIABLE = 'airTemperature'  # for starters
 PREDICTED_VARIABLE = 'steam'  # for starters
 
 
-# In[5]:
+# In[13]:
 
 
 wet_df = read_zip_to_panda(ZIP_PATH,WEATHER_FILE)
@@ -104,10 +105,10 @@ site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
 all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
 
 
-# In[6]:
+# In[14]:
 
 
-DOWNSAMPLE = True   # if true, use 1 time per day, else 24 times per day
+DOWNSAMPLE = False   # if true, use 1 time per day, else 24 times per day
 STEPS_HISTORY = 7 
 STEPS_FUTURE =  1    
 def smooth(df):
@@ -149,26 +150,33 @@ def prepare_for_learning(df):
     return X,y 
 
 
-# In[7]:
+# In[15]:
 
 
 TIMESTEP_VECTOR_DIMENSION = 1 # we are univariate so far
 def make_RNN():
     rnn = Sequential([
-        SimpleRNN(40,return_sequences=True, 
+        LSTM(40,return_sequences=True, 
                   input_shape=(STEPS_HISTORY,TIMESTEP_VECTOR_DIMENSION)), 
-        SimpleRNN(20,return_sequences=True),
-        SimpleRNN(1)  #        TimeDistributed(Dense(STEPS_FUTURE))
+        LSTM(20,return_sequences=True),
+        LSTM(STEPS_FUTURE)  
+    ])
+    #        TimeDistributed(Dense(STEPS_FUTURE))  ???
+    rnn = Sequential([
+        SimpleRNN(20,return_sequences=True, 
+                  input_shape=(STEPS_HISTORY,TIMESTEP_VECTOR_DIMENSION)), 
+        SimpleRNN(10,return_sequences=False),
+        Dense(STEPS_FUTURE)  
     ])
     rnn.compile(optimizer='adam',loss=MeanSquaredError())
     return rnn
 
 
-# In[8]:
+# In[18]:
 
 
 cors = []
-EPOCHS=20
+EPOCHS=50
 # Test on only Peter just during code development
 for BLDG in all_buildings:
     print("Building",BLDG)
@@ -196,16 +204,24 @@ for BLDG in all_buildings:
         y_test = np.asarray(y[split:])
         print("Train on",len(X_train),"samples...")
         model = make_RNN()
+        print(model.summary())
         model.fit(X_train,y_train,epochs=EPOCHS)
         y_pred = model.predict(X_test)
-        # Compare. Solve the problem that predict.shape != truth.shape
+        # Compare. Solve the problem that predict.shape != truth.shape 
+        ##print(" before ytestshape",y_test.shape,"ypredshape",y_pred.shape)
         nsamples, nsteps, ndim = y_test.shape
         y_test = y_test.reshape(nsamples,nsteps*ndim)
+        #nsamples, nsteps, ndim = y_pred.shape
+        #y_pred = y_pred.reshape(nsamples,nsteps*ndim)
+        ##print(" after ytestshape",y_test.shape,"ypredshape",y_pred.shape)
         rmse = mean_squared_error(y_test,y_pred,squared=False)
         # Keep a table for reporting later.
         mean = one_bldg_df[METER].mean()
         cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
         cors.append([cor,mean,rmse,rmse/mean,BLDG])
+        print("cor,mean,rmse,rmse/mean,bldg:",cor,mean,rmse,rmse/mean,BLDG)
+
+        ## break   ## REMOVE THIS LINE TO LOOP OVER BUILDINGS!
         
 if True:
     print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)

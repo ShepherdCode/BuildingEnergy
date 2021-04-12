@@ -46,6 +46,7 @@ from sklearn.metrics import mean_squared_error
 
 from keras.models import Sequential
 from keras.layers import SimpleRNN
+from keras.layers import LSTM
 from keras.layers import TimeDistributed
 from keras.layers import Dense
 from keras.losses import MeanSquaredError
@@ -107,8 +108,8 @@ all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
 # In[6]:
 
 
-DOWNSAMPLE = True   # if true, use 1 time per day, else 24 times per day
-STEPS_HISTORY = 7 
+DOWNSAMPLE = False   # if true, use 1 time per day, else 24 times per day
+STEPS_HISTORY = 24 
 STEPS_FUTURE =  1    
 def smooth(df):
     # For smoothing the 24 hour cycle, we do not want exponential smoothing.
@@ -155,10 +156,16 @@ def prepare_for_learning(df):
 TIMESTEP_VECTOR_DIMENSION = 1 # we are univariate so far
 def make_RNN():
     rnn = Sequential([
-        SimpleRNN(40,return_sequences=True, 
+        LSTM(20,return_sequences=True, 
                   input_shape=(STEPS_HISTORY,TIMESTEP_VECTOR_DIMENSION)), 
-        SimpleRNN(20,return_sequences=True),
-        SimpleRNN(1)  #        TimeDistributed(Dense(STEPS_FUTURE))
+        LSTM(10,return_sequences=False),
+        Dense(STEPS_FUTURE)   
+    ])
+    rnn = Sequential([
+        SimpleRNN(20,return_sequences=True, 
+                  input_shape=(STEPS_HISTORY,TIMESTEP_VECTOR_DIMENSION)), 
+        SimpleRNN(10,return_sequences=False),
+        Dense(STEPS_FUTURE)  
     ])
     rnn.compile(optimizer='adam',loss=MeanSquaredError())
     return rnn
@@ -168,7 +175,7 @@ def make_RNN():
 
 
 cors = []
-EPOCHS=20
+EPOCHS=50
 # Test on only Peter just during code development
 for BLDG in all_buildings:
     print("Building",BLDG)
@@ -196,16 +203,24 @@ for BLDG in all_buildings:
         y_test = np.asarray(y[split:])
         print("Train on",len(X_train),"samples...")
         model = make_RNN()
+        print(model.summary())
         model.fit(X_train,y_train,epochs=EPOCHS)
         y_pred = model.predict(X_test)
-        # Compare. Solve the problem that predict.shape != truth.shape
+        # Compare. Solve the problem that predict.shape != truth.shape 
+        ##print(" before ytestshape",y_test.shape,"ypredshape",y_pred.shape)
         nsamples, nsteps, ndim = y_test.shape
         y_test = y_test.reshape(nsamples,nsteps*ndim)
+        #nsamples, nsteps, ndim = y_pred.shape
+        #y_pred = y_pred.reshape(nsamples,nsteps*ndim)
+        ##print(" after ytestshape",y_test.shape,"ypredshape",y_pred.shape)
         rmse = mean_squared_error(y_test,y_pred,squared=False)
         # Keep a table for reporting later.
         mean = one_bldg_df[METER].mean()
         cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
         cors.append([cor,mean,rmse,rmse/mean,BLDG])
+        print("cor,mean,rmse,rmse/mean,bldg:",cor,mean,rmse,rmse/mean,BLDG)
+
+        ## break   ## REMOVE THIS LINE TO LOOP OVER BUILDINGS!
         
 if True:
     print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)

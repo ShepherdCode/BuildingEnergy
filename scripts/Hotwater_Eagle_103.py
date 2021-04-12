@@ -18,7 +18,7 @@ try:
 except:
     # On home computer, set path to local data directory.
     IN_COLAB = False
-    DATAPATH='data:/'  # must end in "/"
+    DATAPATH='Data:/'  # must end in "/"
 
 ZIP_FILE='BuildingData.zip'
 ZIP_PATH = DATAPATH+ZIP_FILE
@@ -74,7 +74,7 @@ def get_site_timeseries(panda,site):
     panda = drop
 
 
-# In[8]:
+# In[4]:
 
 
 SITE = 'Eagle'
@@ -89,26 +89,40 @@ bldg_specific_hotwater = htwter_df[[BLDG]]
 all_buildings = [x for x in htwter_df.columns if x.startswith(SITE)] 
 
 
-# In[9]:
+# In[5]:
 
+
+def smooth(df):
+    # Come back to this!
+    # This samples down rather than take a moving average.
+    # This reduces the sample rate to 1/24.
+    return df.resample("1D").mean() 
 
 cors = []
-MAX_BAD = 500 # correlation is higher in buildings without so many NaN and 0
+# Correlation is low when buildings have many NaN and 0 values.
+# We will ignore buildings that have >max bad values.
+MAX_BAD = 500 
 for BLDG in all_buildings:
-    bldg_specific_hotwater = htwter_df[[BLDG]]    
+    # Get steam usage for one building.
+    bldg_specific_hotwater = htwter_df[[BLDG]]
+    # Concatenate steam usage with weather.
     one_bldg_df = pd.concat([bldg_specific_hotwater,site_specific_weather],axis=1)
+    # Drop the site, which is constant (we selected for one site).
     one_bldg_df = one_bldg_df.drop(['site_id'],axis=1)
+    # The original steam table used column name = building name.
+    # We are processing one building, so rename to the column 'steam'.
     one_bldg_df = one_bldg_df.rename(columns={BLDG : METER})
+    # In order to filter bad buildings, count sum of NaN + zero.
     one_bldg_df = one_bldg_df.fillna(0)
     bad = one_bldg_df[METER].isin([0]).sum()
-    one_bldg_df = one_bldg_df.resample("1D").mean()  # replace hourly with daily mean
     if bad<=500:
-        mean = one_bldg_df[METER].mean()
-        cor = one_bldg_df.corr().iloc[0][3]
+        one_bldg_df = smooth(one_bldg_df) # moving average: 24hr
         # Linear Regression
         X = one_bldg_df.drop(METER,axis=1)
         y = one_bldg_df[METER]
-        split = len(X)//2 # 900
+        # Ideally, split Year1 = train, Year2 = test.
+        # Some data is incomplete, so split 1st half and 2nd half.
+        split = len(X)//2 
         X_train = X.iloc[0:split]
         y_train = y.iloc[0:split]
         X_test = X.iloc[split:]
@@ -116,10 +130,19 @@ for BLDG in all_buildings:
         linreg = LinearRegression()
         linreg.fit(X_train,y_train)
         y_pred = linreg.predict(X_test)
+        # Keep a table for reporting later.
         rmse = mean_squared_error(y_test,y_pred,squared=False)
+        mean = one_bldg_df[METER].mean()
+        cor = one_bldg_df.corr().iloc[0][3] # corr(steam,dew_temp)
         cors.append([cor,mean,rmse,rmse/mean,BLDG])
 
-print("dew temp corr, dew temp mean, lin reg RMSE, RMSE/mean, BLDG")
+print("Column 1: Correlation of steam usage to dew temp.")
+print("          Using dew temp as leading weather correlate.")
+print("Column 2: Mean steam usage.")
+print("          Using mean to help understand the RMSE.")
+print("Column 3: RMSE of LinearRegression(X=Weather, y=SteamUsage).")
+print("Column 4: RMSE/mean normalized to help understand RMSE.")
+print("Column 5: Building.")
 for cor in sorted(cors):
     print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
 
