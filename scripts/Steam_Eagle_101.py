@@ -75,7 +75,7 @@ def get_site_timeseries(panda,site):
     return panda
 
 
-# In[1]:
+# In[4]:
 
 
 SITE = 'Eagle'
@@ -129,7 +129,7 @@ linreg = LinearRegression()
 linreg.fit(X_train,y_train)
 
 
-# In[11]:
+# In[9]:
 
 
 # Cross validation.
@@ -141,7 +141,7 @@ rmse = mean_squared_error(y_test,y_pred,squared=False)
 print("RMSE = std dev of unexplained variation:",rmse)
 
 
-# In[12]:
+# In[10]:
 
 
 print("std dev of the response variable:",y_test.std())

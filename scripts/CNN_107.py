@@ -2,7 +2,7 @@
 # coding: utf-8
 
 # # CNN 
-# Start with the LSTM 104 notebook.
+# Bug fix in selecting y.
 
 # In[1]:
 
@@ -55,12 +55,6 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[ ]:
-
-
-
-
-
 # In[3]:
 
 
@@ -110,7 +104,7 @@ STEPS_HISTORY = 24   # length of the predictor sequence
 STEPS_FUTURE =  1    # length of the predicted sequence
 
 ## CNN parameters
-EPOCHS=5
+EPOCHS=25
 FILTERS = 8
 WIDTH = 3
 STRIDE = (1,1)
@@ -152,14 +146,11 @@ def is_usable_column(df,column_name):
     return bad<=MAX_BAD
 
 def prepare_for_learning(df):
-    # This is very slow. Is there a faster way? See...
-    # https://stackoverflow.com/questions/27852343/split-python-sequence-time-series-array-into-subsequences-with-overlap
-    # This didn't work: np.atleast_1d(p) 
     num_samples = len(df) - STEPS_FUTURE - STEPS_HISTORY
     num_predictors = len(PREDICTORS)
     X_shape = (num_samples,STEPS_HISTORY,num_predictors,1)
     X=np.zeros(X_shape)
-    Y_shape = (num_samples,1)
+    Y_shape = (num_samples,STEPS_FUTURE)
     y=np.zeros(Y_shape)
     predictor_series = df[PREDICTORS].values  # e.g. all weather values
     predicted_series = df[PREDICTED_VARIABLE].values  # e.g. all meter readings
@@ -177,6 +168,7 @@ def prepare_for_learning(df):
                 # In our data, each weather metric is a scalar.
                 x3 = 0
                 X[x0,x1,x2,x3] = one_predictor
+        y[x0]=predicted_series[x0:x0+STEPS_FUTURE]
     return X,y 
 
 
@@ -228,7 +220,9 @@ for BLDG in all_buildings:
         y_train = np.asarray(y[0:split])
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
-        print("Train on",len(X_train),"samples...")
+        print("Train on",len(X_train),"samples such as",X_train[100][0])
+        print("Predict",len(y_train),"labels such as",y_train[100])
+
         model = make_CNN()
         print(model.summary())
         print("X_train.shape:",X_train.shape)
@@ -263,15 +257,7 @@ if True:
         print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
 
 
-# ## Useful Links
-# 
-# Jason Brownlee  
-# https://machinelearningmastery.com/how-to-develop-lstm-models-for-time-series-forecasting/
-# https://machinelearningmastery.com/multivariate-time-series-forecasting-lstms-keras/
-# https://machinelearningmastery.com/suitability-long-short-term-memory-networks-time-series-forecasting/
-# https://machinelearningmastery.com/autoregression-models-time-series-forecasting-python/
-
-# In[ ]:
+# In[8]:
 
 
 
