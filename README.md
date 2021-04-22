@@ -1,11 +1,13 @@
-# Building Energy Data
-A student collaboration for WVU.
+# Time Series Analysis of Building Energy Data
+by Aida da Silva and Jason Rafe Miller.
+This was a student collaboration for WVU CS 677 with Professor Dehzangi.
+
 
 ## Source for the Dataset
 
-* Publication https://www.nature.com/articles/s41597-020-00712-x
-* Kaggle https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2
-* Download https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2/download
+* Publication [Scientific Data](https://www.nature.com/articles/s41597-020-00712-x)
+* Kaggle [project page](https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2)
+* Download [archive.zip](https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2/download) from Kaggle
 
 ## Getting started
 * Create a directory called BuildingEnergy.
@@ -19,7 +21,7 @@ from Kaggle into the data subdirectory.
 * Run the weather notebook as your first test.
 
 ## LSTnet
-* Paper on ACM https://dl.acm.org/doi/abs/10.1145/3209978.3210006
-* Paper on arXiv https://arxiv.org/abs/1703.07015 and https://arxiv.org/pdf/1703.07015.pdf
-* LSTNet authors’ code uses Python 2.7 https://github.com/laiguokun/LSTNet
-* 3rd party implementations in Keras https://github.com/fbadine/LSTNet and https://github.com/Lorne0/LSTNet_keras
+* Paper on [ACM](https://dl.acm.org/doi/abs/10.1145/3209978.3210006)
+or [arXiv](https://arxiv.org/abs/1703.07015) or [arXiv](https://arxiv.org/pdf/1703.07015.pdf)
+* LSTNet authors posted their Python 2 [code](https://github.com/laiguokun/LSTNet)
+* A 3rd party Python 3 and Keras implementation [here](https://github.com/fbadine/LSTNet) and [here](https://github.com/Lorne0/LSTNet_keras)
