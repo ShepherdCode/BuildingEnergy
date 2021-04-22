@@ -1,10 +1,22 @@
 # Building Energy Data
-A collaboration for WVU
+A student collaboration for WVU.
 
-## Data Sources
+## Source for the Dataset
 
-* Kaggle https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2
 * Publication https://www.nature.com/articles/s41597-020-00712-x
+* Kaggle https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2
+* Download https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2/download
+
+## Getting started
+* Create a directory called BuildingEnergy.
+* Populate BuildingEnergy with all the Python notebook files (*.ipynb).
+* Create a subdirectory called data and move to that directory.
+* Download [archive.zip](https://www.kaggle.com/claytonmiller/buildingdatagenomeproject2/download) 
+from Kaggle into the data subdirectory.
+* Rename archive.zip to BuildingData.zip (but do not unzip it).
+* Move up to the BuildingEnergy directory.
+* Start Jupyter notebook.
+* Run the weather notebook as your first test.
 
 ## LSTnet
 * Paper on ACM https://dl.acm.org/doi/abs/10.1145/3209978.3210006
