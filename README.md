@@ -28,5 +28,5 @@ from Kaggle into the data subdirectory.
 ## LSTnet
 * Paper on [ACM](https://dl.acm.org/doi/abs/10.1145/3209978.3210006)
 or [arXiv](https://arxiv.org/abs/1703.07015) or [arXiv](https://arxiv.org/pdf/1703.07015.pdf)
-* LSTNet authors posted their Python 2 [code](https://github.com/laiguokun/LSTNet)
+* LSTNet authors posted their Python 2 and PyTorch [code](https://github.com/laiguokun/LSTNet)
 * A 3rd party Python 3 and Keras implementation [here](https://github.com/fbadine/LSTNet) and [here](https://github.com/Lorne0/LSTNet_keras)
