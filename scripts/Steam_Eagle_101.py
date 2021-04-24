@@ -2,7 +2,13 @@
 # coding: utf-8
 
 # # Eagle 101
-# Try forecasting on one site or one building.
+# Assume user downloaded archive.zip from Kaggle, renamed the file BuildingData.zip, and stored the file in the data subdirectory. Assume the zip file contains the steam.csv and the weather.csv files.
+# 
+# Steam usage is analyzed to find a subset of buildings with high quality data, defined as having fewer than 500 Nan-or-zero-valued meter readings. Here, 16 buildings from site Eagle pass filter to make BuildingSet1.
+# 
+# For BuildingSet1, weather features were tested for correlation with steam usage. Two features were most correlated with steam usage. These were outside air temperature and dew temperature.
+# 
+# This notebook produced Report 1, Figure 2, the correlation matrix between weather features and steam usage.
 
 # In[1]:
 

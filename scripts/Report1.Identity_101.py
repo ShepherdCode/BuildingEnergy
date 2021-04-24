@@ -2,7 +2,13 @@
 # coding: utf-8
 
 # # Identity
-# As a baseline, always predict tommorrow's steam = today's air temp * factor.
+# Assume user downloaded archive.zip from Kaggle, renamed the file BuildingData.zip, and stored the file in the data subdirectory. Assume the zip file contains the weather.csv file.
+# 
+# This notebook uses a naive model to establish a baseline forecast accuracy. The naive model says energy at time t equals weather at time t-1, scaled by some global conversion factor:
+# 
+# $energy_{t} = factor * weather_{t-1}$
+# 
+# This notebook produced the numbers summarized in Report 1, Table I, row="naive".
 
 # In[1]:
 
@@ -81,9 +87,8 @@ def get_site_timeseries(panda,site):
 
 SITE = 'Eagle'
 METER = 'steam'
-BLDG = 'Eagle_education_Peter'   # one example
-PREDICTOR_VARIABLE = 'airTemperature'  # for starters
-PREDICTED_VARIABLE = 'steam'  # for starters
+PREDICTOR_VARIABLE = 'airTemperature' 
+PREDICTED_VARIABLE = 'steam'  
 
 
 # In[5]:
@@ -124,9 +129,6 @@ def is_usable_column(df,column_name):
     return bad<=MAX_BAD
 
 def prepare_for_learning(df):
-    # This is very slow. Is there a faster way? See...
-    # https://stackoverflow.com/questions/27852343/split-python-sequence-time-series-array-into-subsequences-with-overlap
-    # X = df.drop(METER,axis=1) # this would use all predictors, just drop the predicted
     X=[]
     y=[]
     predictor_series = df[PREDICTOR_VARIABLE].values
@@ -136,10 +138,10 @@ def prepare_for_learning(df):
         one_predicted = predicted_series[i:i+STEPS_FUTURE]
         X.append(one_predictor)
         y.append(one_predicted)
-    return X,y  # both are list of dataframe
+    return X,y  
 
 
-# In[12]:
+# In[7]:
 
 
 cors = []
@@ -161,38 +163,48 @@ for BLDG in all_buildings:
     if is_usable_column(one_bldg_df,METER):
         one_bldg_df = smooth(one_bldg_df) # moving average: 24hr
         X,y = prepare_for_learning(one_bldg_df)
-        if True:
-            #X = one_bldg_df.drop(METER,axis=1)
-            #y = one_bldg_df[METER]
-            # Ideally, split Year1 = train, Year2 = test.
-            # Some data is incomplete, so split 1st half and 2nd half.
-            split = len(X)//2 
-            X_train = X[0:split]
-            y_train = y[0:split]
-            X_test = X[split:]
-            y_test = y[split:]
-            factor = np.mean(y_train) / np.mean(X_test)
-            #print(factor,"=",np.mean(y_train),"/",np.mean(X_test))
-            y_pred = [x*factor for x in X_test]
-            # Keep a table for reporting later.
-            rmse = mean_squared_error(y_test,y_pred,squared=False)
-            mean = one_bldg_df[METER].mean()
-            cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
-            cors.append([cor,mean,rmse,rmse/mean,BLDG])
-            print("Samples:",len(X_train),"Factor:",factor)
-            print("RMSE/mean=",rmse/mean)
-if True:
-    print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
-    print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",PREDICTOR_VARIABLE)
-    print("          Using one weather feature as leading correlate.")
-    print("Column 2: Mean usage.")
-    print("          Using mean to help understand the RMSE.")
-    print("Column 3: RMSE of LinearRegression(X=Weather, y=Usage).")
-    print("Column 4: RMSE/mean normalized to help understand RMSE.")
-    print("Column 5: Building.")
-    for cor in sorted(cors):
-        print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
+        # Ideally, split Year1 = train, Year2 = test.
+        # Some data is incomplete, so split 1st half and 2nd half.
+        split = len(X)//2 
+        X_train = X[0:split]
+        y_train = y[0:split]
+        X_test = X[split:]
+        y_test = y[split:]
+        factor = np.mean(y_train) / np.mean(X_test)
+        #print(factor,"=",np.mean(y_train),"/",np.mean(X_test))
+        y_pred = [x*factor for x in X_test]
+        # Keep a table for reporting later.
+        rmse = mean_squared_error(y_test,y_pred,squared=False)
+        mean = one_bldg_df[METER].mean()
+        cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
+        cors.append([cor,mean,rmse,rmse/mean,BLDG])
+        print("Samples:",len(X_train),"Factor:",factor)
+        print("RMSE/mean=",rmse/mean)
 
+print()
+print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
+print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",PREDICTOR_VARIABLE)
+print("          Using one weather feature as leading correlate.")
+print("Column 2: Mean usage.")
+print("          Using mean to help understand the RMSE.")
+print("Column 3: RMSE of LinearRegression(X=Weather, y=Usage).")
+print("Column 4: RMSE/mean normalized to help understand RMSE.")
+print("Column 5: Building.")
+for cor in sorted(cors):
+    print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
+
+
+# ### Report 1
+# Report 1, Table I, includes the following summary. This is the mean over 16 builings of the normalized RMSE per building.
+# 
+# Naive model using predictions based on 1 time 1 feature  
+# * 1.08 mean RMSE   
+# * 0.20 stddev  
+# 
+# Here are the results omitting outlier building Wesley.
+# * 1.12 mean RMSE   
+# * 0.13 stddev  
+# 
 
 # In[ ]:
 

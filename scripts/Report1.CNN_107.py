@@ -1,8 +1,19 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # LSTM 
-# Here, use 8 weather features.
+# # CNN 
+# Assume user downloaded archive.zip from Kaggle, renamed the file BuildingData.zip, and stored the file in the data subdirectory. Assume the zip file contains the weather.csv file.
+# 
+# Use neural net with CNN layers to predict steam usage based on weather.
+# 
+# The model was trained for 25 epochs.
+# The model was trained on Year 1 and tested on Year 2.
+# Only selected buildings of site Eagle wered used.
+# 
+# The predictor variables are the 8 features of weather
+# over the previous 24 time periods.
+# The predicted variable is the 1 steam usage feature
+# over the future 1 time period.
 
 # In[1]:
 
@@ -46,6 +57,8 @@ from keras.layers import LSTM
 from keras.layers import TimeDistributed
 from keras.layers import Dense
 from keras.losses import MeanSquaredError
+from keras.layers import Conv2D
+from keras.layers import Flatten
 
 import matplotlib.pyplot as plt
 from matplotlib import colors
@@ -80,16 +93,33 @@ def get_site_timeseries(panda,site):
     return panda
 
 
+# ## CNN setup
+
 # In[4]:
 
 
+# Before analyzing the entire dataset, we look at this subset.
 SITE = 'Eagle'
 METER = 'steam'
-BLDG = 'Eagle_education_Peter'   # one example
-PREDICTOR_VARIABLE = 'dewTemperature'  # for starters
+
+# Arrange "picture" of weather with temperatures toward the middle
+PREDICTED_VARIABLE = 'steam' 
 PREDICTORS = ['cloudCoverage', 'airTemperature', 'dewTemperature', 'precipDepth1HR', 'precipDepth6HR', 'seaLvlPressure', 'windDirection', 'windSpeed']
 print("PREDICTORS=",len(PREDICTORS),PREDICTORS)
-PREDICTED_VARIABLE = 'steam'  # for starters
+
+# Downsample True means collapse 365*24 measures to 365 daily averages
+# Downsample False means replace 365*24 measures with 365*24 window averages
+DOWNSAMPLE = False   
+
+STEPS_HISTORY = 24   # length of the predictor sequence
+STEPS_FUTURE =  1    # length of the predicted sequence
+
+## CNN parameters
+EPOCHS=25
+FILTERS = 8
+WIDTH = 3
+STRIDE = (1,1)
+INPUT_SHAPE = (STEPS_HISTORY,len(PREDICTORS),1) 
 
 
 # In[5]:
@@ -106,9 +136,6 @@ all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
 # In[6]:
 
 
-DOWNSAMPLE = False   # if true, use 1 time per day, else 24 times per day
-STEPS_HISTORY = 24 
-STEPS_FUTURE =  1    
 def smooth(df):
     # For smoothing the 24 hour cycle, we do not want exponential smoothing.
     smoothed = None
@@ -132,7 +159,7 @@ def is_usable_column(df,column_name):
 def prepare_for_learning(df):
     num_samples = len(df) - STEPS_FUTURE - STEPS_HISTORY
     num_predictors = len(PREDICTORS)
-    X_shape = (num_samples,STEPS_HISTORY,num_predictors)
+    X_shape = (num_samples,STEPS_HISTORY,num_predictors,1)
     X=np.zeros(X_shape)
     Y_shape = (num_samples,STEPS_FUTURE)
     y=np.zeros(Y_shape)
@@ -148,7 +175,10 @@ def prepare_for_learning(df):
             one_period = one_sample[x1]
             for x2 in range (0,num_predictors): # In 1 time period, loop over 8 weather metrics
                 one_predictor = one_period[x2]
-                X[x0,x1,x2] = one_predictor
+                # for x3 in range (0,X_shape[3]): # In 1 metric, loop over vector dimensions
+                # In our data, each weather metric is a scalar.
+                x3 = 0
+                X[x0,x1,x2,x3] = one_predictor
         y[x0]=predicted_series[x0:x0+STEPS_FUTURE]
     return X,y 
 
@@ -156,24 +186,27 @@ def prepare_for_learning(df):
 # In[7]:
 
 
-num_predictors = len(PREDICTORS)  # e.g. 8 weather features
-def make_RNN():
-    rnn = Sequential([
-        SimpleRNN(20,return_sequences=True, 
-                  input_shape=(STEPS_HISTORY,num_predictors)), 
-        SimpleRNN(10,return_sequences=False),
-        Dense(STEPS_FUTURE)   
-    ])
-    rnn.compile(optimizer='adam',loss=MeanSquaredError())
-    return rnn
+def make_CNN():
+    print("make_CNN")
+    print("input shape:",INPUT_SHAPE)
+    cnn = Sequential()
+    cnn.add(
+        Conv2D( input_shape=INPUT_SHAPE,
+            filters=FILTERS,kernel_size=WIDTH,strides=STRIDE,
+            activation=None, padding="valid"))
+    cnn.add(Flatten())
+    cnn.add(Dense(STEPS_FUTURE))   
+    cnn.compile(optimizer='adam',loss=MeanSquaredError())
+    return cnn
 
+
+# ## Process all buildings
 
 # In[8]:
 
 
 cors = []
-EPOCHS=25
-# Test on only Peter just during code development
+ONE_PREDICTOR = 'dewTemperature'  ## illustrate difficulty by showing best correlate
 for BLDG in all_buildings:
     print("Building",BLDG)
     # Get steam usage for one building.
@@ -198,43 +231,59 @@ for BLDG in all_buildings:
         y_train = np.asarray(y[0:split])
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
-        print("Train on",len(X_train),"samples such as",X_train[100][0])
-        print("Predict",len(y_train),"labels such as",y_train[100])
 
-        model = make_RNN()
+        model = make_CNN()
         print(model.summary())
+        print("X_train.shape:",X_train.shape)
         model.fit(X_train,y_train,epochs=EPOCHS)
         y_pred = model.predict(X_test)
-        # Compare. Solve the problem that predict.shape != truth.shape 
-        ##print(" before ytestshape",y_test.shape,"ypredshape",y_pred.shape)
-        #nsamples, nsteps, ndim = y_test.shape
-        #y_test = y_test.reshape(nsamples,nsteps*ndim)
-        #nsamples, nsteps, ndim = y_pred.shape
-        #y_pred = y_pred.reshape(nsamples,nsteps*ndim)
-        ##print(" after ytestshape",y_test.shape,"ypredshape",y_pred.shape)
         rmse = mean_squared_error(y_test,y_pred,squared=False)
         # Keep a table for reporting later.
         mean = one_bldg_df[METER].mean()
-        cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
+        cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][ONE_PREDICTOR] 
         cors.append([cor,mean,rmse,rmse/mean,BLDG])
         print("cor,mean,rmse,rmse/mean,bldg:",cor,mean,rmse,rmse/mean,BLDG)
-
-        ## break   ## REMOVE THIS LINE TO LOOP OVER BUILDINGS!
         
-if True:
-    print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
-    print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",PREDICTOR_VARIABLE)
-    print("          Using one weather feature as leading correlate.")
-    print("Column 2: Mean usage.")
-    print("          Using mean to help understand the RMSE.")
-    print("Column 3: RMSE of LinearRegression(X=Weather, y=Usage).")
-    print("Column 4: RMSE/mean normalized to help understand RMSE.")
-    print("Column 5: Building.")
-    for cor in sorted(cors):
-        print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
+print()
+print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
+print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",ONE_PREDICTOR)
+print("          Using one weather feature as leading correlate.")
+print("Column 2: Mean usage.")
+print("          Using mean to help understand the RMSE.")
+print("Column 3: RMSE of LinearRegression(X=Weather, y=Usage).")
+print("Column 4: RMSE/mean normalized to help understand RMSE.")
+print("Column 5: Building.")
+for cor in sorted(cors):
+    print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
 
 
-# In[8]:
+# ### Report 1
+# Report 1, Table I, includes the following summary. This is the mean over 16 builings of the normalized RMSE per building.
+# 
+# CNN model using predictions based on 24 times, 8 features
+# 
+# * 0.85 mean RMSE
+# * 2.07 stddev
+# 
+# Here are the results omitting outlier building Wesley.
+# 
+# * 0.33 mean RMSE
+# * 0.09 stddev
+# 
+
+# ### Report 2
+# We reran the notebook and got slightly different results.
+# 
+# * 0.74 mean RMSE
+# * 1.61 stddev
+# 
+# Here are the results omitting outlier building Wesley.
+# 
+# * 0.34 mean RMSE
+# * 0.09 stddev
+# 
+
+# In[ ]:
 
 
 

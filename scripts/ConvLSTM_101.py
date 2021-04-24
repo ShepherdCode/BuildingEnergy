@@ -1,12 +1,8 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Identity
+# # Convolution and LSTM 
 # Assume user downloaded archive.zip from Kaggle, renamed the file BuildingData.zip, and stored the file in the data subdirectory. Assume the zip file contains the weather.csv file.
-# 
-# This notebook uses a naive model to establish a baseline forecast accuracy. The naive model says energy at time t equals weather at time t-1, scaled by some global conversion factor:
-# 
-# $energy_{t} = factor * energy_{t-1}$
 
 # In[1]:
 
@@ -31,7 +27,7 @@ WEATHER_FILE='weather.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[2]:
+# In[ ]:
 
 
 from os import listdir
@@ -41,10 +37,18 @@ import numpy as np
 import pandas as pd
 from scipy import stats  # mode
 
-from sklearn.decomposition import PCA, KernelPCA
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error
-from sklearn.linear_model import LinearRegression
+
+from keras.models import Sequential
+from keras.layers import SimpleRNN
+from keras.layers import LSTM
+from keras.layers import TimeDistributed
+from keras.layers import Dense
+from keras.losses import MeanSquaredError
+from keras.layers import Conv2D
+from keras.layers import Flatten
+from keras.layers import TimeDistributed
 
 import matplotlib.pyplot as plt
 from matplotlib import colors
@@ -52,7 +56,7 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[3]:
+# In[ ]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -79,16 +83,36 @@ def get_site_timeseries(panda,site):
     return panda
 
 
-# In[4]:
+# ## CNN setup
+
+# In[ ]:
 
 
+# Before analyzing the entire dataset, we look at this subset.
 SITE = 'Eagle'
 METER = 'steam'
-PREDICTOR_VARIABLE = 'airTemperature'  
-PREDICTED_VARIABLE = 'steam'  
+
+# Arrange "picture" of weather with temperatures toward the middle
+PREDICTED_VARIABLE = 'steam' 
+PREDICTORS = ['cloudCoverage', 'airTemperature', 'dewTemperature', 'precipDepth1HR', 'precipDepth6HR', 'seaLvlPressure', 'windDirection', 'windSpeed']
+print("PREDICTORS=",len(PREDICTORS),PREDICTORS)
+
+# Downsample True means collapse 365*24 measures to 365 daily averages
+# Downsample False means replace 365*24 measures with 365*24 window averages
+DOWNSAMPLE = False   
+
+STEPS_HISTORY = 24   # length of the predictor sequence
+STEPS_FUTURE =  1    # length of the predicted sequence
+
+## CNN parameters
+EPOCHS=25
+FILTERS = 8
+WIDTH = 3
+STRIDE = (1,1)
+INPUT_SHAPE = (STEPS_HISTORY,len(PREDICTORS),1) 
 
 
-# In[5]:
+# In[ ]:
 
 
 wet_df = read_zip_to_panda(ZIP_PATH,WEATHER_FILE)
@@ -99,12 +123,9 @@ site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
 all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
 
 
-# In[6]:
+# In[ ]:
 
 
-DOWNSAMPLE = False   # if true, use 1 time per day, else 24 times per day
-STEPS_HISTORY = 1 
-STEPS_FUTURE =  1    
 def smooth(df):
     # For smoothing the 24 hour cycle, we do not want exponential smoothing.
     smoothed = None
@@ -125,27 +146,56 @@ def is_usable_column(df,column_name):
     bad = df[column_name].isin([0]).sum()
     return bad<=MAX_BAD
 
-# This is slow. Is there a faster way? See...
-# https://stackoverflow.com/questions/27852343/split-python-sequence-time-series-array-into-subsequences-with-overlap
-# X = df.drop(METER,axis=1) # this would use all predictors, just drop the predicted
 def prepare_for_learning(df):
-    X=[]  # univariate predictors
-    y=[]  # univariate predictions
-    predictor_series = df[PREDICTOR_VARIABLE].values
-    predicted_series = df[PREDICTED_VARIABLE].values
-    for i in range(STEPS_HISTORY,len(df)-STEPS_FUTURE):
-        one_predictor = predictor_series[i-STEPS_HISTORY:i]
-        one_predicted = predicted_series[i:i+STEPS_FUTURE]
-        X.append(one_predictor)
-        y.append(one_predicted)
-    return X,y  
+    num_samples = len(df) - STEPS_FUTURE - STEPS_HISTORY
+    num_predictors = len(PREDICTORS)
+    X_shape = (num_samples,STEPS_HISTORY,num_predictors)
+    X=np.zeros(X_shape)
+    Y_shape = (num_samples,STEPS_FUTURE)
+    y=np.zeros(Y_shape)
+    predictor_series = df[PREDICTORS].values  # e.g. all weather values
+    predicted_series = df[PREDICTED_VARIABLE].values  # e.g. all meter readings
+    
+    for x0 in range (0,num_samples): # Loop over all 1000 samples
+        # This is one array of weather for previous 24 time periods
+        one_sample = predictor_series[x0:x0+STEPS_HISTORY]
+        one_label =  predicted_series[x0+STEPS_HISTORY:x0+STEPS_FUTURE]
+        # Loop over all 24 time periods
+        for x1 in range (0,STEPS_HISTORY): # In 1 sample, loop over 24 time periods
+            one_period = one_sample[x1]
+            for x2 in range (0,num_predictors): # In 1 time period, loop over 8 weather metrics
+                one_predictor = one_period[x2]
+                X[x0,x1,x2] = one_predictor
+        y[x0]=predicted_series[x0:x0+STEPS_FUTURE]
+    return X,y 
 
 
-# In[7]:
+# In[ ]:
+
+
+def make_DNN():
+    print("make_DNN")
+    dnn = Sequential()
+    dnn.add(TimeDistributed(
+        Conv2D(input_shape=INPUT_SHAPE,
+            filters=FILTERS,kernel_size=WIDTH,strides=STRIDE,
+            activation=None, padding="valid")))
+    dnn.add(TimeDistributed(Flatten()))
+    dnn.add(LSTM(20,return_sequences=False)) 
+    dnn.add(Dense(STEPS_FUTURE))   
+    dnn.compile(optimizer='adam',loss=MeanSquaredError())
+    return dnn
+
+
+# ## Process all buildings
+
+# In[ ]:
 
 
 cors = []
+ONE_PREDICTOR = 'dewTemperature'  ## illustrate difficulty by showing best correlate
 for BLDG in all_buildings:
+    print("Building",BLDG)
     # Get steam usage for one building.
     bldg_specific_steam = stm_df[[BLDG]]
     # Concatenate steam usage with weather.
@@ -157,29 +207,33 @@ for BLDG in all_buildings:
     one_bldg_df = one_bldg_df.rename(columns={BLDG : METER})
     # In order to filter bad buildings, count sum of NaN + zero.
     one_bldg_df = one_bldg_df.fillna(0)
-    print(BLDG)
     
     if is_usable_column(one_bldg_df,METER):
-        one_bldg_df = smooth(one_bldg_df) # moving average: 24hr
+        one_bldg_df = smooth(one_bldg_df) 
         X,y = prepare_for_learning(one_bldg_df)
         # Ideally, split Year1 = train, Year2 = test.
         # Some data is incomplete, so split 1st half and 2nd half.
         split = len(X)//2 
-        X_train = X[0:split]
-        y_train = y[0:split]
-        X_test = X[split:]
-        y_test = y[split:]
-        y_pred = X_test
-        # Keep a table for reporting later.
-        rmse = mean_squared_error(y_test,y_pred,squared=False)
-        mean = one_bldg_df[METER].mean()
-        cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][PREDICTOR_VARIABLE] 
-        cors.append([cor,mean,rmse,rmse/mean,BLDG])
-        print("  RMSE=",rmse)
+        X_train = np.asarray(X[0:split])
+        y_train = np.asarray(y[0:split])
+        X_test = np.asarray(X[split:])
+        y_test = np.asarray(y[split:])
 
+        model = make_DNN()
+        print(model.summary())
+        print("X_train.shape:",X_train.shape)
+        model.fit(X_train,y_train,epochs=EPOCHS)
+        y_pred = model.predict(X_test)
+        rmse = mean_squared_error(y_test,y_pred,squared=False)
+        # Keep a table for reporting later.
+        mean = one_bldg_df[METER].mean()
+        cor = one_bldg_df.corr().loc[PREDICTED_VARIABLE][ONE_PREDICTOR] 
+        cors.append([cor,mean,rmse,rmse/mean,BLDG])
+        print("cor,mean,rmse,rmse/mean,bldg:",cor,mean,rmse,rmse/mean,BLDG)
+        
 print()
 print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
-print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",PREDICTOR_VARIABLE)
+print("Column 1: Correlation of",PREDICTED_VARIABLE,"and",ONE_PREDICTOR)
 print("          Using one weather feature as leading correlate.")
 print("Column 2: Mean usage.")
 print("          Using mean to help understand the RMSE.")
@@ -190,9 +244,18 @@ for cor in sorted(cors):
     print("%7.4f %10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3],cor[4]))    
 
 
-# ### Report 1
-# These results were not used.
-# See Identity_101.
+# ### Report 2
+# 
+# DNN model using predictions based on 24 times, 8 features
+# 
+# * 0.00 mean RMSE
+# * 0.00 stddev
+# 
+# Here are the results omitting outlier building Wesley.
+# 
+# * 0.00 mean RMSE
+# * 0.00 stddev
+# 
 
 # In[ ]:
 

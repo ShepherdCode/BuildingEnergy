@@ -5,7 +5,9 @@
 # Assume user downloaded archive.zip from Kaggle,
 # renamed the file BuildingData.zip,
 # and stored the file in the data subdirectory.
-# Assume the zip file contains the weather.csv file.  
+# Assume the zip file contains the weather.csv file. 
+# 
+# The weather file has one row per hour for two years with 8 feature columns. We noted a large range of mean air temperature per site: from 7.8 to 25.1 degrees Celsius.
 
 # In[1]:
 
