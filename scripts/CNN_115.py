@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # Convolution and LSTM 
-# Assume user downloaded archive.zip from Kaggle, renamed the file BuildingData.zip, and stored the file in the data subdirectory. Assume the zip file contains the weather.csv file.
+# # CNN 
+# No smoothing. Use 24 hr to predict 24 hr.
+# 
+# Compare to CNN 108 which predicted 1 hr. 
 
 # In[1]:
 
@@ -27,7 +29,7 @@ WEATHER_FILE='weather.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[ ]:
+# In[2]:
 
 
 from os import listdir
@@ -48,7 +50,6 @@ from keras.layers import Dense
 from keras.losses import MeanSquaredError
 from keras.layers import Conv2D
 from keras.layers import Flatten
-from keras.layers import TimeDistributed
 
 import matplotlib.pyplot as plt
 from matplotlib import colors
@@ -56,7 +57,7 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[ ]:
+# In[3]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -85,7 +86,7 @@ def get_site_timeseries(panda,site):
 
 # ## CNN setup
 
-# In[ ]:
+# In[4]:
 
 
 # Before analyzing the entire dataset, we look at this subset.
@@ -102,7 +103,7 @@ print("PREDICTORS=",len(PREDICTORS),PREDICTORS)
 DOWNSAMPLE = False   
 
 STEPS_HISTORY = 24   # length of the predictor sequence
-STEPS_FUTURE =  1    # length of the predicted sequence
+STEPS_FUTURE =  24   # length of the predicted sequence
 
 ## CNN parameters
 EPOCHS=25
@@ -112,7 +113,7 @@ STRIDE = (1,1)
 INPUT_SHAPE = (STEPS_HISTORY,len(PREDICTORS),1) 
 
 
-# In[ ]:
+# In[5]:
 
 
 wet_df = read_zip_to_panda(ZIP_PATH,WEATHER_FILE)
@@ -123,7 +124,7 @@ site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
 all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
 
 
-# In[ ]:
+# In[6]:
 
 
 def smooth(df):
@@ -149,7 +150,7 @@ def is_usable_column(df,column_name):
 def prepare_for_learning(df):
     num_samples = len(df) - STEPS_FUTURE - STEPS_HISTORY
     num_predictors = len(PREDICTORS)
-    X_shape = (num_samples,STEPS_HISTORY,num_predictors)
+    X_shape = (num_samples,STEPS_HISTORY,num_predictors,1)
     X=np.zeros(X_shape)
     Y_shape = (num_samples,STEPS_FUTURE)
     y=np.zeros(Y_shape)
@@ -157,7 +158,7 @@ def prepare_for_learning(df):
     predicted_series = df[PREDICTED_VARIABLE].values  # e.g. all meter readings
     
     for x0 in range (0,num_samples): # Loop over all 1000 samples
-        # This is one array of weather for previous 24 time periods
+        # Weather [0:24], steam [24:25]
         one_sample = predictor_series[x0:x0+STEPS_HISTORY]
         one_label =  predicted_series[x0+STEPS_HISTORY:x0+STEPS_FUTURE]
         # Loop over all 24 time periods
@@ -165,31 +166,34 @@ def prepare_for_learning(df):
             one_period = one_sample[x1]
             for x2 in range (0,num_predictors): # In 1 time period, loop over 8 weather metrics
                 one_predictor = one_period[x2]
-                X[x0,x1,x2] = one_predictor
+                # for x3 in range (0,X_shape[3]): # In 1 metric, loop over vector dimensions
+                # In our data, each weather metric is a scalar.
+                x3 = 0
+                X[x0,x1,x2,x3] = one_predictor
         y[x0]=predicted_series[x0:x0+STEPS_FUTURE]
     return X,y 
 
 
-# In[ ]:
+# In[7]:
 
 
-def make_DNN():
-    print("make_DNN")
-    dnn = Sequential()
-    dnn.add(TimeDistributed(
-        Conv2D(input_shape=INPUT_SHAPE,
+def make_CNN():
+    print("make_CNN")
+    print("input shape:",INPUT_SHAPE)
+    cnn = Sequential()
+    cnn.add(
+        Conv2D( input_shape=INPUT_SHAPE,
             filters=FILTERS,kernel_size=WIDTH,strides=STRIDE,
-            activation=None, padding="valid")))
-    dnn.add(TimeDistributed(Flatten()))
-    dnn.add(LSTM(20,return_sequences=False)) 
-    dnn.add(Dense(STEPS_FUTURE))   
-    dnn.compile(optimizer='adam',loss=MeanSquaredError())
-    return dnn
+            activation=None, padding="valid"))
+    cnn.add(Flatten())
+    cnn.add(Dense(STEPS_FUTURE))   
+    cnn.compile(optimizer='adam',loss=MeanSquaredError())
+    return cnn
 
 
 # ## Process all buildings
 
-# In[ ]:
+# In[8]:
 
 
 cors = []
@@ -209,7 +213,7 @@ for BLDG in all_buildings:
     one_bldg_df = one_bldg_df.fillna(0)
     
     if is_usable_column(one_bldg_df,METER):
-        one_bldg_df = smooth(one_bldg_df) 
+        #one_bldg_df = smooth(one_bldg_df) 
         X,y = prepare_for_learning(one_bldg_df)
         # Ideally, split Year1 = train, Year2 = test.
         # Some data is incomplete, so split 1st half and 2nd half.
@@ -219,7 +223,7 @@ for BLDG in all_buildings:
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
 
-        model = make_DNN()
+        model = make_CNN()
         print(model.summary())
         print("X_train.shape:",X_train.shape)
         model.fit(X_train,y_train,epochs=EPOCHS)
@@ -245,19 +249,18 @@ for cor in sorted(cors):
 
 
 # ### Report 2
+# Summary results.
 # 
-# DNN model using predictions based on 24 times, 8 features
-# 
-# * 0.00 mean RMSE
-# * 0.00 stddev
+# * 2.20 mean RMSE
+# * 6.83 stddev
 # 
 # Here are the results omitting outlier building Wesley.
 # 
-# * 0.00 mean RMSE
-# * 0.00 stddev
+# * 0.49 mean RMSE
+# * 0.19 stddev
 # 
 
-# In[ ]:
+# In[8]:
 
 
 
