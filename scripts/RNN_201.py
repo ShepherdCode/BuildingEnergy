@@ -2,9 +2,7 @@
 # coding: utf-8
 
 # # RNN 
-# Discovered and fixed bug in prepare() where the y_train for each sample covered the same (past) days as the X_train. The code worked for predicting one time point into the future, as presented in Report 1, but not multiple time points into the future.
 # 
-# Discovered that the model merely predicts the building's mean steam for every future time point. More epochs of training merely brings the mean closer to true. Examples of (epochs,pred_mean) where true mean is 82: (2,2) (10,20) (20,50) (50,83) (100,86).
 
 # In[1]:
 
@@ -154,7 +152,20 @@ def make_RNN():
     return rnn
 
 
-# In[8]:
+# In[19]:
+
+
+def window_smooth(oldarray):
+    win_len=5
+    df = pd.DataFrame(oldarray)
+    newdf = df.rolling(win_len).mean()
+    newarray = np.asarray(newdf)
+    for i in range(0,win_len):
+        newarray[i]=oldarray[i]
+    return newarray
+
+
+# In[20]:
 
 
 cors = []
@@ -177,6 +188,7 @@ for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
         split = len(X)//2   # year 1 vs year 2
         X_train = np.asarray(X[0:split])
         y_train = np.asarray(y[0:split])
+        y_train = window_smooth(y_train)
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
 

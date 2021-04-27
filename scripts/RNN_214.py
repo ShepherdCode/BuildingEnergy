@@ -2,11 +2,13 @@
 # coding: utf-8
 
 # # RNN 
-# Discovered and fixed bug in prepare() where the y_train for each sample covered the same (past) days as the X_train. The code worked for predicting one time point into the future, as presented in Report 1, but not multiple time points into the future.
+# Didn't help with SimpleRNN: smooth the y_train, add hour to X.
 # 
-# Discovered that the model merely predicts the building's mean steam for every future time point. More epochs of training merely brings the mean closer to true. Examples of (epochs,pred_mean) where true mean is 82: (2,2) (10,20) (20,50) (50,83) (100,86).
+# RNN 211: Predict 24 hour-of-day given 24 hour-of-day. Replace NaN with mean. Use Simple RNN 3x16. Works great!
+# 
+# Now, put back smoothed steam as predicted variable.
 
-# In[1]:
+# In[102]:
 
 
 DATAPATH=''
@@ -29,7 +31,7 @@ WEATHER_FILE='weather.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[2]:
+# In[103]:
 
 
 from os import listdir
@@ -45,6 +47,7 @@ from sklearn.metrics import mean_squared_error
 from keras.models import Sequential
 from keras.layers import SimpleRNN
 from keras.layers import LSTM
+from keras.layers import GRU
 from keras.layers import TimeDistributed
 from keras.layers import Dense
 from keras.losses import MeanSquaredError
@@ -55,7 +58,7 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[3]:
+# In[104]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -82,40 +85,55 @@ def get_site_timeseries(panda,site):
     return panda
 
 
-# In[4]:
+# In[105]:
 
 
 EPOCHS=50
 SITE = 'Eagle'
 METER = 'steam'
-PREDICTORS = ['cloudCoverage', 'airTemperature', 'dewTemperature', 'precipDepth1HR', 'precipDepth6HR', 'seaLvlPressure', 'windDirection', 'windSpeed']
-#PREDICTORS.append('steam')
-print("PREDICTORS=",len(PREDICTORS),PREDICTORS)
-NUM_PREDICTORS = len(PREDICTORS)  
+PREDICTORS = ['hour','cloudCoverage', 'airTemperature', 'dewTemperature', 'precipDepth1HR', 'precipDepth6HR', 'seaLvlPressure', 'windDirection', 'windSpeed']
+PREDICTORS = ['steam']
+NUM_PREDICTORS=len(PREDICTORS)
+print("PREDICTORS=",NUM_PREDICTORS,PREDICTORS)
 PREDICTED_VARIABLE = 'steam'  
-STEPS_HISTORY = 24 
-STEPS_FUTURE =  24    
+STEPS_HISTORY = 24
+STEPS_FORWARD = 12 
+STEPS_FUTURE =  12    
 
 
-# In[5]:
+# In[106]:
 
 
+# This will have to change when we predict across multiple sites!
 wet_df = read_zip_to_panda(ZIP_PATH,WEATHER_FILE)
 wet_df = fix_date_type(wet_df)
+site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
+site_specific_weather.insert(0,'hour',0)
+L=len(site_specific_weather)
+for i in range(0,L):
+    t=site_specific_weather.index[i]
+    h=t.hour
+    site_specific_weather.iat[i,0] = h
+site_specific_weather.tail()
+
+
+# In[107]:
+
+
 stm_df = read_zip_to_panda(ZIP_PATH,STEAM_FILE)
 stm_df = fix_date_type(stm_df)
-site_specific_weather = wet_df.loc[wet_df['site_id'] == SITE]
 all_buildings = [x for x in stm_df.columns if x.startswith(SITE)]
+stm_df.tail()
 
 
-# In[6]:
+# In[108]:
 
 
 # Correlation is low when buildings have many NaN and 0 meter readings.
 # We will ignore buildings that have >max bad meter readings.
 def is_usable_column(df,column_name):
     MAX_BAD = 500 
-    bad = df[column_name].isin([0]).sum()
+    bad = df[column_name].isna().sum()
     return bad<=MAX_BAD
 
 def prepare_for_learning(df):
@@ -129,9 +147,9 @@ def prepare_for_learning(df):
     
     for sam in range (0,num_samples): # Loop over all 1000 samples
         # This is one array of weather for previous 24 time periods
-        one_sample = predictor_series[sam:sam+STEPS_HISTORY]
+        one_sample = predictor_series[sam:sam+STEPS_FORWARD]
         # Loop over all 24 time periods
-        for time in range (0,STEPS_HISTORY): # In 1 sample, loop over 24 time periods
+        for time in range (0,STEPS_FORWARD): # In 1 sample, loop over 24 time periods
             one_period = one_sample[time]
             for feat in range (0,NUM_PREDICTORS): # In 1 time period, loop over 8 weather metrics
                 X[sam,time,feat] = one_period[feat]
@@ -140,21 +158,38 @@ def prepare_for_learning(df):
     return X,y 
 
 
-# In[7]:
+# In[109]:
 
 
 def make_RNN():
     rnn = Sequential([
-        SimpleRNN(8,return_sequences=True, 
+        GRU(16,return_sequences=True, 
                   input_shape=(STEPS_HISTORY,NUM_PREDICTORS)), 
-        SimpleRNN(8,return_sequences=False),
+        GRU(16,return_sequences=True),
+        GRU(16,return_sequences=False),
         Dense(STEPS_FUTURE)
     ])
     rnn.compile(optimizer='adam',loss=MeanSquaredError())
     return rnn
 
 
-# In[8]:
+# In[110]:
+
+
+def window_smooth(oldarray):
+    win_len=3
+    df = pd.DataFrame(oldarray)
+    newdf = df.rolling(win_len).mean()
+    newarray = np.asarray(newdf)
+    for i in range(0,win_len):
+        newarray[i]=oldarray[i]
+    return newarray
+
+
+# Pandas rolling() supports these window function from scipy:  
+# https://docs.scipy.org/doc/scipy/reference/signal.windows.html#module-scipy.signal.windows
+
+# In[111]:
 
 
 cors = []
@@ -170,20 +205,24 @@ for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
     # We are processing one building, so rename to the column 'steam'.
     one_bldg_df = one_bldg_df.rename(columns={BLDG : METER})
     # In order to filter bad buildings, count sum of NaN + zero.
-    one_bldg_df = one_bldg_df.fillna(0)
+    #### one_bldg_df = one_bldg_df.fillna(0)
     
     if is_usable_column(one_bldg_df,METER):
+        pseudovalue = one_bldg_df[PREDICTED_VARIABLE].mean()
+        one_bldg_df = one_bldg_df.fillna(pseudovalue)
         X,y = prepare_for_learning(one_bldg_df)
         split = len(X)//2   # year 1 vs year 2
         X_train = np.asarray(X[0:split])
         y_train = np.asarray(y[0:split])
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
-
+        example=311
         model = make_RNN()
         print(model.summary())
-        print("Example X train:\n",X_train[210].astype(int))
-        print("Example y train:\n",y_train[210].astype(int))
+        #print("Example X train:\n",X_train[example].astype(int))
+        print("Example y train before smooth:\n",y_train[example].astype(int))
+        y_train = window_smooth(y_train)
+        print("Example y train after smooth:\n",y_train[example].astype(int))
         model.fit(X_train,y_train,epochs=EPOCHS)
         y_pred = model.predict(X_test)
         rmse = mean_squared_error(y_test,y_pred,squared=False)
@@ -191,8 +230,8 @@ for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
         mean = one_bldg_df[METER].mean()
         cors.append([mean,rmse,rmse/mean,BLDG])
         print("mean,rmse,rmse/mean,bldg:",mean,rmse,rmse/mean,BLDG)
-        print("Example prediction:\n",y_pred[210].astype(int))
-        print("Example truth:\n",y_test[210].astype(int))
+        for hr in range(0,24,2):
+            print("Example prediction:\n",hr,y_pred[example+hr].astype(int))
 
 print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
 print("Column 1: Mean usage.")
@@ -203,13 +242,13 @@ for cor in sorted(cors):
     print("%10.2f %10.2f %5.2f   %s"%(cor[0],cor[1],cor[2],cor[3]))    
 
 
-# In[ ]:
+# In[111]:
 
 
 
 
 
-# In[ ]:
+# In[111]:
 
 
 
