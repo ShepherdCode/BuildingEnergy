@@ -2,11 +2,11 @@
 # coding: utf-8
 
 # # RNN 
-# Test effect of scaling on RNN. Compare to RNN 228.
+# Test effect of scaling on RNN. Compare to RNN 227.
 # 
 # Input weather + time, output steam. Given 12 hour, predict same 12 hr next day. No smoothing. 
 # 
-# With standard scaler on inputs. RMSE/mean = 0.83. Not great.
+# No standard scaler on inputs. RMSE/mean = 0.83. Not great.
 
 # In[1]:
 
@@ -127,7 +127,7 @@ def load_weather_for_site(site):
             site_df.iat[i,0] = hour
             site_df.iat[i,1] = month
             site_df.iat[i,2] = doy
-    site_df = scale(site_df) # could break if any column is empty
+    #site_df = scale(site_df) # could break if any column is empty
     return site_df
 
 one_site_weather = load_weather_for_site(SITE)
