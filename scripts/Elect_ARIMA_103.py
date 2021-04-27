@@ -38,12 +38,15 @@ from sklearn.preprocessing import StandardScaler
 
 import statsmodels.api as sm
 from statsmodels.tsa.arima.model import ARIMA
-from statsmodels.tsa.ar_model import AR
+from pmdarima import auto_arima
 from sklearn.metrics import mean_squared_error
 from statsmodels.tsa.stattools import adfuller,acf,pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
 from statsmodels.tools.eval_measures import rmse
 from math import sqrt
+
+import warnings
+warnings.filterwarnings('ignore')
 
 import matplotlib.pyplot as plt
 from matplotlib import colors
@@ -77,7 +80,7 @@ elec_df.info()
 # In[5]:
 
 
-elec_df = elec_df['Eagle_assembly_Portia'] ['1-1-2016':'12-31-2016']
+elec_df = elec_df['Eagle_assembly_Portia'] #['1-1-2016':'12-31-2016']
 building = elec_df
 building = building.replace( 0,  4)
 elec_df.describe()
@@ -92,22 +95,23 @@ elec_df.plot(figsize=(20,10))
 # In[7]:
 
 
-building = elec_df
 smooth=building.rolling(window=24).mean()
 smooth.plot(figsize=(20,6))
 plt.show()
 
 
-# In[22]:
+# ## Stationarity Check
+
+# In[8]:
 
 
-#Checking the Stationarity
+#Checking the Stationarity: series that has a constant mean
 
 #Perform Building Dickey-Fuller test:
-print ('Results of Dickey-Fuller Test: ')
-dftest = adfuller(building, autolag = 'AIC')
+print ('Results of Dickey-Fuller Test: \n the test statistic is less than critical value, reject the null hypothesis')
+dftest = adfuller(building, autolag = 'AIC') #AIC gives the information about time series 
 
-dfoutput= pd.Series (dftest[0:4], index= ['Test Statistic','p-value','#lags used', 'Number of Observations Used'])
+dfoutput= pd.Series (dftest[0:4], index= ['Test Statistic','p-value: \n p-value is smaller than 0.05','#lags used', 'Number of Observations Used'])
 for key, value in dftest [4].items ():
     dfoutput ['Critical Value (%s)' %key] = value
 
@@ -133,7 +137,7 @@ plt.title ('Rolling Mean & Standard Deviation')
 #plt.show (block = False)
 
 
-# In[23]:
+# In[10]:
 
 
 #Log transformation
@@ -141,7 +145,7 @@ building = building.replace( 0,  4)
 building_logscale = np.log(building)
 
 
-# In[24]:
+# In[11]:
 
 
 moving_avg =building_logscale.rolling(window = 24).mean()
@@ -168,7 +172,7 @@ plt.plot (building, label = 'Building Electricity')
 plt.legend(loc ='best')
 
 plt.subplot (412)
-plt.plot (trend,label = 'Trend')
+plt.plot (trend,label = 'Cyclical')
 plt.legend(loc ='best')
 
 plt.subplot (413)
@@ -188,17 +192,10 @@ print(decomposition.seasonal)
 print(decomposition.resid)
 
 
-# ## Determine the order of AR and MA component 
+# ## Determine the order of AR, I and MA component 
 # Using AFC autocorreclation plot and PACF partial autocorrelatioin plot
 
 # In[13]:
-
-
-lag_acf = acf (building, nlags = 20)
-lag_acf = pacf (building,nlags = 20)
-
-
-# In[14]:
 
 
 fig = plt.figure(figsize = (20,6))
@@ -208,61 +205,64 @@ building_pacf = fig.add_subplot(212)
 pacf_plot = sm.graphics.tsa.plot_pacf (building.dropna(),lags = 40, ax = building_pacf )
 
 
+# Using auto_arima function
+
+# In[14]:
+
+
+
+#pdq_order = auto_arima(building, trace = True)
+#pdq_order.summary()
+
+
 # ## ARIMA
 
 # 
-# p = period for autoregressive model
-# d = order of autoregression
-# q = periods in moving average
+# AR = p = period for autoregressive model (regression the past lag value, PACF method),
+# <br>
+# Integrated = d = order of autoregression (differenced value from present and previous to eliminate the effects of seasonality; removing the trend and seasonality to make it stationary)
+# <br>
+# MA = q = periods in moving average (present value is not only depended on the past value but the error lag value as well, use the ACF method)
 
 # In[15]:
 
 
-model = ARIMA(building, order = (4,2,4)) #number of order taken from the acf and pcf graph
-model = model.fit()
+#Build ARIMA model
+
+model = ARIMA(building, order = (3,1,5)) #number of order generates from the auto_arima 
+results_ARIMA = model.fit()
 
 
 # In[16]:
 
 
-pred = model.predict(start = len (building), end = len(building)+24*7, typ = 'levels'). rename ('ARIMA predictions')
-print (pred)
+pd.DataFrame (building)
 
 
 # In[17]:
 
 
-pred.plot(figsize = (20,6), legend = True)
+pred = results_ARIMA.predict(start = len (building), end = len(building)+24*7, typ = 'levels'). rename ('ARIMA predictions')
+pd.DataFrame(pred)
 
 
 # In[18]:
 
 
-# evaluate forecasts
-#rmse = sqrt(mean_squared_error(pred))
-#print('Test RMSE: %.3f' % rmse)
+pred.plot(figsize = (20,6), legend = True)
 
 
 # In[19]:
 
 
+building.plot(figsize = (20,6), label = 'Train',legend = True)
 
-plt.figure(figsize = (15,6))
-model = ARIMA (building, order = (1,0,1)) #number of order taken from the graph
-results_ARIMA = model.fit ()
-plt.plot (building)
-plt.plot(results_ARIMA.fittedvalues, color = 'red')
+pred.plot(figsize = (20,6), legend = True)
 
+
+# ## Residuals
 
 # In[20]:
-
-
-print (results_ARIMA.summary())
-
-
-# ## Taking results back to original scale
-
-# In[21]:
 
 
 # line plot of residuals
@@ -274,4 +274,47 @@ residuals.plot(kind='kde')
 plt.show()
 # summary stats of residuals
 print(residuals.describe())
+
+
+# In[21]:
+
+
+print (residuals)
+results = residuals.to_csv('residuals_result.csv')
+
+
+# ## evaluate forecasts
+# 
+
+# In[22]:
+
+
+#rmse = sqrt(mean_squared_error(building, pred))
+#print('Test RMSE: %.3f' % rmse)
+
+
+# In[23]:
+
+
+#test.mean(),np.sqrt(test.var())
+
+
+# In[24]:
+
+
+plt.figure(figsize = (15,6))
+plt.plot (building)
+plt.plot(results_ARIMA.fittedvalues, color = 'red')
+
+
+# In[25]:
+
+
+print (results_ARIMA.summary())
+
+
+# In[ ]:
+
+
+
 

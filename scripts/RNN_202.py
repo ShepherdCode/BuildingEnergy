@@ -2,9 +2,9 @@
 # coding: utf-8
 
 # # RNN 
-# Discovered and fixed bug in prepare() where the y_train for each sample covered the same (past) days as the X_train. The code worked for predicting one time point into the future, as presented in Report 1, but not multiple time points into the future.
+# As before, smooth the y_train. Add past steam to X_train and X_test.
 # 
-# Discovered that the model merely predicts the building's mean steam for every future time point. More epochs of training merely brings the mean closer to true. Examples of (epochs,pred_mean) where true mean is 82: (2,2) (10,20) (20,50) (50,83) (100,86).
+# Note X does not get smoothed. No improvement to predictions.
 
 # In[1]:
 
@@ -89,7 +89,7 @@ EPOCHS=50
 SITE = 'Eagle'
 METER = 'steam'
 PREDICTORS = ['cloudCoverage', 'airTemperature', 'dewTemperature', 'precipDepth1HR', 'precipDepth6HR', 'seaLvlPressure', 'windDirection', 'windSpeed']
-#PREDICTORS.append('steam')
+PREDICTORS.append('steam')
 print("PREDICTORS=",len(PREDICTORS),PREDICTORS)
 NUM_PREDICTORS = len(PREDICTORS)  
 PREDICTED_VARIABLE = 'steam'  
@@ -157,6 +157,22 @@ def make_RNN():
 # In[8]:
 
 
+def window_smooth(oldarray):
+    win_len=5
+    df = pd.DataFrame(oldarray)
+    newdf = df.rolling(win_len).mean()
+    newarray = np.asarray(newdf)
+    for i in range(0,win_len):
+        newarray[i]=oldarray[i]
+    return newarray
+
+
+# Pandas rolling() supports these window function from scipy:  
+# https://docs.scipy.org/doc/scipy/reference/signal.windows.html#module-scipy.signal.windows
+
+# In[9]:
+
+
 cors = []
 for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
     print("Building",BLDG)
@@ -179,11 +195,13 @@ for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
         y_train = np.asarray(y[0:split])
         X_test = np.asarray(X[split:])
         y_test = np.asarray(y[split:])
-
+        example=211
         model = make_RNN()
         print(model.summary())
-        print("Example X train:\n",X_train[210].astype(int))
-        print("Example y train:\n",y_train[210].astype(int))
+        print("Example X train:\n",X_train[example].astype(int))
+        print("Example y train before smooth:\n",y_train[example].astype(int))
+        y_train = window_smooth(y_train)
+        print("Example y train after smooth:\n",y_train[example].astype(int))
         model.fit(X_train,y_train,epochs=EPOCHS)
         y_pred = model.predict(X_test)
         rmse = mean_squared_error(y_test,y_pred,squared=False)
@@ -191,8 +209,9 @@ for BLDG in ['Eagle_lodging_Edgardo']:  ### all_buildings:
         mean = one_bldg_df[METER].mean()
         cors.append([mean,rmse,rmse/mean,BLDG])
         print("mean,rmse,rmse/mean,bldg:",mean,rmse,rmse/mean,BLDG)
-        print("Example prediction:\n",y_pred[210].astype(int))
-        print("Example truth:\n",y_test[210].astype(int))
+        for hr in range(0,5):
+            print("Example prediction:\n",hr,y_pred[example+hr].astype(int))
+            print("Example truth:\n",hr,y_test[example+hr].astype(int))
 
 print("History",STEPS_HISTORY,"Future",STEPS_FUTURE)
 print("Column 1: Mean usage.")
