@@ -2,11 +2,11 @@
 # coding: utf-8
 
 # # RNN 
-# Test effect of scaling on RNN. Compare to RNN 227.
+# Test effect of scaling on RNN. Compare to RNN 228.
 # 
 # Input weather + time, output steam. Given 12 hour, predict same 12 hr next day. No smoothing. 
 # 
-# No standard scaler on inputs. RMSE/mean = 0.83. Not great.
+# With smoothing but no standard scaler on inputs. 
 
 # In[1]:
 
@@ -54,7 +54,7 @@ METER_FILE='steam.csv'
 WEATHER_FILE='weather.csv'
 EXAMPLE='Eagle_lodging_Edgardo'
 SITE_BUILDINGS = None
-SMOOTHING_WINDOW=0
+SMOOTHING_WINDOW=3
 
 
 # In[3]:
@@ -127,7 +127,7 @@ def load_weather_for_site(site):
             site_df.iat[i,0] = hour
             site_df.iat[i,1] = month
             site_df.iat[i,2] = doy
-    #site_df = scale(site_df) # could break if any column is empty
+    ### site_df = scale(site_df) # test no scaling
     return site_df
 
 one_site_weather = load_weather_for_site(SITE)

@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
+# ## Time series forecasting (ARIMA)
+# Specific building Eagle_Health Vincenza, on Steam usage
+
 # In[1]:
 
 
@@ -19,7 +22,7 @@ except:
 
 ZIP_FILE='BuildingData.zip'
 ZIP_PATH = DATAPATH+ZIP_FILE
-ELEC_FILE='electricity.csv'
+STEAM_FILE='steam.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
@@ -38,7 +41,7 @@ from sklearn.preprocessing import StandardScaler
 
 import statsmodels.api as sm
 from statsmodels.tsa.arima.model import ARIMA
-#from pmdarima import auto_arima
+from pmdarima import auto_arima
 from sklearn.metrics import mean_squared_error
 from statsmodels.tsa.stattools import adfuller,acf,pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -52,6 +55,12 @@ import matplotlib.pyplot as plt
 from matplotlib import colors
 mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
+
+
+# In[ ]:
+
+
+
 
 
 # In[3]:
@@ -72,32 +81,31 @@ def fix_date_type(panda):
 # In[4]:
 
 
-elec_df = read_zip_to_panda(ZIP_PATH,ELEC_FILE)
-elec_df = fix_date_type(elec_df)
-elec_df.info()
+steam_df = read_zip_to_panda(ZIP_PATH,STEAM_FILE)
+steam_df = fix_date_type(steam_df)
+steam_df.info()
 
 
 # In[5]:
 
 
-elec_df = elec_df['Eagle_assembly_Portia'] #['1-1-2016':'1-11-2016']
-building = elec_df
-building = building.replace( 0,  4)
-elec_df.describe()
+steam_df = steam_df['Eagle_health_Vincenza'] #['1-1-2016':'12-31-2016']
+building = steam_df
+#building = building.replace( 0,  4)
+steam_df.describe()
 
 
 # In[6]:
 
 
-elec_df.plot(figsize=(20,10))
+steam_df.plot(figsize=(20,10))
 
 
 # In[7]:
 
 
-smooth=building.rolling(window=24).mean()
-smooth.plot(figsize=(20,6))
-plt.show()
+column_means = building. mean()
+building = building. fillna(column_means)
 
 
 # ## Stationarity Check
@@ -125,11 +133,12 @@ print (dfoutput)
 #Determine the rolling statistic
 rolmean = building.rolling(window = 24).mean()
 rolstd = building.rolling(window = 24).std()
-
+print ('The mean value:',rolmean)
+print ('The variance:',rolstd)
 #Checking the Stationarity
 #Plot rolling statistics
 plt.figure(figsize=(20,10))
-orig = plt.plot (building, color = 'blue',label = 'Eagle_assembly_Portia')
+orig = plt.plot (building, color = 'blue',label = 'Eagle_health_Vincenza')
 mean = plt.plot (rolmean, color = 'red',label = 'Rolling Mean')
 std = plt.plot (rolstd, color = 'black',label = 'Rolling std')
 plt.legend (loc ='best')
@@ -140,24 +149,9 @@ plt.title ('Rolling Mean & Standard Deviation')
 # In[10]:
 
 
-#Log transformation
-building = building.replace( 0,  4)
-building_logscale = np.log(building)
-
-
-# In[11]:
-
-
-moving_avg =building_logscale.rolling(window = 24).mean()
-moving_avg.plot(figsize=(20,6))
-
-
-# In[12]:
-
-
 #Automatic Time Series Decomposition
 
-decomposition = seasonal_decompose (building.values,period = 30, model = 'additive') 
+decomposition = seasonal_decompose (building.values,period = 24*30, model = 'additive') 
 
 trend = decomposition.trend
 seasonal = decomposition.seasonal
@@ -168,7 +162,7 @@ fig = plt.figure(1)
 
 
 plt.subplot (411)
-plt.plot (building, label = 'Building Electricity')
+plt.plot (building, label = 'Building Steam Energy')
 plt.legend(loc ='best')
 
 plt.subplot (412)
@@ -186,16 +180,16 @@ plt.legend(loc ='best')
 plt.tight_layout()
 
 print('The result:')
-#print(decomposition.observed)
-#print(decomposition.trend)
-#print(decomposition.seasonal)
-#print(decomposition.resid)
+print(decomposition.observed)
+print(decomposition.trend)
+print(decomposition.seasonal)
+print(decomposition.resid)
 
 
 # ## Determine the order of AR, I and MA component 
 # Using AFC autocorreclation plot and PACF partial autocorrelatioin plot
 
-# In[13]:
+# In[11]:
 
 
 fig = plt.figure(figsize = (20,6))
@@ -205,41 +199,37 @@ building_pacf = fig.add_subplot(212)
 pacf_plot = sm.graphics.tsa.plot_pacf (building.dropna(),lags = 40, ax = building_pacf )
 
 
-# Using auto_arima function
-
-# In[14]:
+# In[12]:
 
 
-
-#pdq_order = auto_arima(building, trace = True)
-#pdq_order.summary()
+#Determine the arima order using the autorima
+pdq_order = auto_arima(building, trace = True)
+pdq_order.summary()
 
 
 # ## ARIMA
-
-# 
 # AR = p = period for autoregressive model (regression the past lag value, ACF method),
 # <br>
 # Integrated = d = order of autoregression (differenced value from present and previous to eliminate the effects of seasonality; removing the trend and seasonality to make it stationary)
 # <br>
-# MA = q = periods in moving average (present value is not only depended on the past value but the error lag value as well, use the ACF method)
+# MA = q = periods in moving average (present value is not only depended on the past value but the error lag value as well, use the PACF method)
 
-# In[52]:
+# In[13]:
 
 
 #Build ARIMA model
 
-model = ARIMA(building, order = (3,0,5)) #number of order generates from the auto_arima 
+model = ARIMA(building, order = (5,0,5)) #number of order generates from the auto_arima 
 results_ARIMA = model.fit()
 
 
-# In[53]:
+# In[14]:
 
 
 pd.DataFrame (building.head(24))
 
 
-# In[54]:
+# In[15]:
 
 
 pred = results_ARIMA.predict(start = len (building), end = len(building)+24*7, typ = 'levels'). rename ('ARIMA predictions')
@@ -247,77 +237,10 @@ pd.DataFrame(pred)
 print ('The prediction value for the next 24*7',pred.head(24))
 
 
-# In[ ]:
-
-
-
-
-
-# In[18]:
+# In[16]:
 
 
 pred.plot(figsize = (20,6), legend = True)
-
-
-# In[19]:
-
-
-building.plot(figsize = (20,6), label = 'Train',legend = True)
-
-pred.plot(figsize = (20,6), legend = True)
-
-
-# ## Residuals
-
-# In[20]:
-
-
-# line plot of residuals
-residuals = pd.DataFrame(results_ARIMA.resid)
-residuals.plot(figsize = (15,6))
-plt.show()
-# density plot of residuals
-residuals.plot(kind='kde')
-plt.show()
-# summary stats of residuals
-print(residuals.describe())
-
-
-# In[21]:
-
-
-print (residuals)
-#results = residuals.to_csv('residuals_result.csv')
-
-
-# ## evaluate forecasts
-# 
-
-# In[22]:
-
-
-#rmse = sqrt(mean_squared_error(building, pred))
-#print('Test RMSE: %.3f' % rmse)
-
-
-# In[23]:
-
-
-#test.mean(),np.sqrt(test.var())
-
-
-# In[24]:
-
-
-plt.figure(figsize = (15,6))
-plt.plot (building)
-plt.plot(results_ARIMA.fittedvalues, color = 'red')
-
-
-# In[25]:
-
-
-print (results_ARIMA.summary())
 
 
 # In[ ]:

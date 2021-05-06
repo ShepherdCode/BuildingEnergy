@@ -15,7 +15,7 @@ try:
 except:
     # On home computer, set path to local data directory.
     IN_COLAB = False
-    DATAPATH='C:/'  # must end in "/"
+    DATAPATH='data/'  # must end in "/"
 
 ZIP_FILE='BuildingData.zip'
 ZIP_PATH = DATAPATH+ZIP_FILE
@@ -23,7 +23,7 @@ ELEC_FILE='electricity.csv'
 MODEL_FILE='Model'  # will be used later to save models
 
 
-# In[2]:
+# In[ ]:
 
 
 from os import listdir
@@ -37,8 +37,11 @@ from sklearn.decomposition import PCA, KernelPCA
 from sklearn.preprocessing import StandardScaler
 
 import statsmodels.api as sm
-from statsmodels.tsa.arima.model import ARIMA
+#from statsmodels.tsa.arima.model import ARIMA
 #from pmdarima import auto_arima
+
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
 from sklearn.metrics import mean_squared_error
 from statsmodels.tsa.stattools import adfuller,acf,pacf
 from statsmodels.tsa.seasonal import seasonal_decompose
@@ -54,7 +57,7 @@ mycmap = colors.ListedColormap(['red','blue'])  # list color for label 0 then 1
 np.set_printoptions(precision=2)
 
 
-# In[3]:
+# In[ ]:
 
 
 def read_zip_to_panda(zip_filename,csv_filename):
@@ -69,7 +72,7 @@ def fix_date_type(panda):
     return indexed
 
 
-# In[4]:
+# In[ ]:
 
 
 elec_df = read_zip_to_panda(ZIP_PATH,ELEC_FILE)
@@ -77,32 +80,18 @@ elec_df = fix_date_type(elec_df)
 elec_df.info()
 
 
-# In[5]:
+# In[ ]:
 
 
-elec_df = elec_df['Eagle_assembly_Portia'] #['1-1-2016':'1-11-2016']
+elec_df = elec_df['Eagle_assembly_Portia'] #['1-1-2016':'12-31-2016']
 building = elec_df
 building = building.replace( 0,  4)
 elec_df.describe()
 
 
-# In[6]:
+# ## Checking the Stationarity
 
-
-elec_df.plot(figsize=(20,10))
-
-
-# In[7]:
-
-
-smooth=building.rolling(window=24).mean()
-smooth.plot(figsize=(20,6))
-plt.show()
-
-
-# ## Stationarity Check
-
-# In[8]:
+# In[ ]:
 
 
 #Checking the Stationarity: series that has a constant mean
@@ -118,7 +107,7 @@ for key, value in dftest [4].items ():
 print (dfoutput)
 
 
-# In[9]:
+# In[ ]:
 
 
 
@@ -137,65 +126,16 @@ plt.title ('Rolling Mean & Standard Deviation')
 #plt.show (block = False)
 
 
-# In[10]:
+# In[ ]:
 
 
-#Log transformation
-building = building.replace( 0,  4)
-building_logscale = np.log(building)
 
-
-# In[11]:
-
-
-moving_avg =building_logscale.rolling(window = 24).mean()
-moving_avg.plot(figsize=(20,6))
-
-
-# In[12]:
-
-
-#Automatic Time Series Decomposition
-
-decomposition = seasonal_decompose (building.values,period = 30, model = 'additive') 
-
-trend = decomposition.trend
-seasonal = decomposition.seasonal
-residual = decomposition.resid
-
-plt.figure(figsize = (20,10))
-fig = plt.figure(1)
-
-
-plt.subplot (411)
-plt.plot (building, label = 'Building Electricity')
-plt.legend(loc ='best')
-
-plt.subplot (412)
-plt.plot (trend,label = 'Cyclical')
-plt.legend(loc ='best')
-
-plt.subplot (413)
-plt.plot (seasonal, label = 'Seasonality')
-plt.legend(loc ='best')
-
-plt.subplot (414)
-plt.plot (residual, label = 'Residual')
-plt.legend(loc ='best')
-
-plt.tight_layout()
-
-print('The result:')
-#print(decomposition.observed)
-#print(decomposition.trend)
-#print(decomposition.seasonal)
-#print(decomposition.resid)
 
 
 # ## Determine the order of AR, I and MA component 
 # Using AFC autocorreclation plot and PACF partial autocorrelatioin plot
 
-# In[13]:
+# In[ ]:
 
 
 fig = plt.figure(figsize = (20,6))
@@ -205,47 +145,14 @@ building_pacf = fig.add_subplot(212)
 pacf_plot = sm.graphics.tsa.plot_pacf (building.dropna(),lags = 40, ax = building_pacf )
 
 
-# Using auto_arima function
-
-# In[14]:
-
-
-
-#pdq_order = auto_arima(building, trace = True)
-#pdq_order.summary()
-
-
 # ## ARIMA
-
 # 
-# AR = p = period for autoregressive model (regression the past lag value, ACF method),
+# 
+# AR = p = period for autoregressive model (regression the past lag value, PACF method),
 # <br>
 # Integrated = d = order of autoregression (differenced value from present and previous to eliminate the effects of seasonality; removing the trend and seasonality to make it stationary)
 # <br>
 # MA = q = periods in moving average (present value is not only depended on the past value but the error lag value as well, use the ACF method)
-
-# In[52]:
-
-
-#Build ARIMA model
-
-model = ARIMA(building, order = (3,0,5)) #number of order generates from the auto_arima 
-results_ARIMA = model.fit()
-
-
-# In[53]:
-
-
-pd.DataFrame (building.head(24))
-
-
-# In[54]:
-
-
-pred = results_ARIMA.predict(start = len (building), end = len(building)+24*7, typ = 'levels'). rename ('ARIMA predictions')
-pd.DataFrame(pred)
-print ('The prediction value for the next 24*7',pred.head(24))
-
 
 # In[ ]:
 
@@ -253,23 +160,37 @@ print ('The prediction value for the next 24*7',pred.head(24))
 
 
 
-# In[18]:
+# In[ ]:
 
 
-pred.plot(figsize = (20,6), legend = True)
 
 
-# In[19]:
+#Build SARIMA model
+
+model = SARIMAX(building, order=(3, 1, 5), seasonal_order=(1, 1, 0, 12)) #(1, 1, 0, 9))
+
+results_ARIMA = model.fit()
+
+results_ARIMA.summary()
 
 
-building.plot(figsize = (20,6), label = 'Train',legend = True)
+# In[ ]:
 
-pred.plot(figsize = (20,6), legend = True)
+
+pred = results_ARIMA.predict(start = len (building), end = len(building)+24*7, typ = 'levels'). rename ('ARIMA predictions')
+pd.DataFrame(pred.head())
+
+
+# In[ ]:
+
+
+pred.plot(figsize = (10,2), legend = True)
 
 
 # ## Residuals
+# 
 
-# In[20]:
+# In[ ]:
 
 
 # line plot of residuals
@@ -281,43 +202,6 @@ residuals.plot(kind='kde')
 plt.show()
 # summary stats of residuals
 print(residuals.describe())
-
-
-# In[21]:
-
-
-print (residuals)
-#results = residuals.to_csv('residuals_result.csv')
-
-
-# ## evaluate forecasts
-# 
-
-# In[22]:
-
-
-#rmse = sqrt(mean_squared_error(building, pred))
-#print('Test RMSE: %.3f' % rmse)
-
-
-# In[23]:
-
-
-#test.mean(),np.sqrt(test.var())
-
-
-# In[24]:
-
-
-plt.figure(figsize = (15,6))
-plt.plot (building)
-plt.plot(results_ARIMA.fittedvalues, color = 'red')
-
-
-# In[25]:
-
-
-print (results_ARIMA.summary())
 
 
 # In[ ]:
